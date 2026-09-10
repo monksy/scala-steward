@@ -49,7 +49,7 @@ class SbtAlgTest extends FunSuite {
 
   test("getDependencies without meta-builds") {
     val repo = Repo("sbt-alg", "test-without-meta-builds")
-    val buildRoot = BuildRoot(repo, ".", includeMetaBuilds = false)
+    val buildRoot = BuildRoot(repo, ".", includeSbtMetaBuilds = false)
     val repoDir = workspaceAlg.repoDir(repo).unsafeRunSync()
     val initial = MockState.empty
       .addFiles(repoDir / "project" / "build.properties" -> "sbt.version=1.3.11")

@@ -21,6 +21,7 @@ import munit.FunSuite
 import org.scalasteward.core.buildtool.BuildRoot
 import org.scalasteward.core.data.Repo
 import org.scalasteward.core.mock.MockContext.context.*
+import org.scalasteward.core.mock.MockState.TraceEntry.Cmd
 import org.scalasteward.core.mock.{MockEffOps, MockState}
 
 class Giter8AlgTest extends FunSuite {
@@ -34,20 +35,37 @@ class Giter8AlgTest extends FunSuite {
         repoDir / "target" / "g8" / "build.sbt" -> "name := \"example\""
       )
       .unsafeRunSync()
-    val result = giter8Alg.getRenderedGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
-    val expectedBuildRoot = BuildRoot(repo, "target/g8", includeMetaBuilds = false)
+    val (state, result) =
+      giter8Alg.getRenderedGiter8BuildRoot(repo).runSA(initial).unsafeRunSync()
+    val expectedBuildRoot = BuildRoot(repo, "target/g8", includeSbtMetaBuilds = false)
     assertEquals(result, Some(expectedBuildRoot))
+    assert(
+      state.trace.contains(
+        Cmd.execSandboxed(
+          repoDir,
+          "sbt",
+          "--server",
+          "-Dsbt.color=false",
+          "-Dsbt.log.noformat=true",
+          "-Dsbt.supershell=false",
+          "-Dsbt.server.forcestart=true",
+          "g8"
+        )
+      )
+    )
   }
 
   test("getRenderedGiter8BuildRoot: repository name does not need to end with .g8") {
     val repo = Repo("example", "kafka-streams")
     val repoDir = workspaceAlg.repoDir(repo).unsafeRunSync()
     val initial = MockState.empty
-      .addFiles(repoDir / "src" / "main" / "g8" / "build.sbt" -> "lazy val root = ...")
-      .flatMap(_.addFiles(repoDir / "target" / "g8" / "build.sbt" -> "lazy val root = ..."))
+      .addFiles(
+        repoDir / "src" / "main" / "g8" / "build.sbt" -> "lazy val root = ...",
+        repoDir / "target" / "g8" / "build.sbt" -> "lazy val root = ..."
+      )
       .unsafeRunSync()
     val result = giter8Alg.getRenderedGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
-    val expectedBuildRoot = BuildRoot(repo, "target/g8", includeMetaBuilds = false)
+    val expectedBuildRoot = BuildRoot(repo, "target/g8", includeSbtMetaBuilds = false)
     assertEquals(result, Some(expectedBuildRoot))
   }
 

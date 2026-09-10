@@ -40,7 +40,8 @@ final class Giter8Alg[F[_]](implicit
     }
 
   private def render(repo: Repo, repoDir: better.files.File): F[Option[BuildRoot]] = {
-    val renderedBuildRoot = BuildRoot(repo, renderedDir, includeMetaBuilds = false)
+    val renderedBuildRoot = BuildRoot(repo, renderedDir, includeSbtMetaBuilds = false)
+    val renderedBuildFile = repoDir / renderedDir / "build.sbt"
     val command = Nel.of(
       "sbt",
       "--server",
@@ -53,13 +54,11 @@ final class Giter8Alg[F[_]](implicit
 
     logger.info(s"Render Giter8 template in $templateDir") >>
       processAlg.execSandboxed(command, repoDir).void >>
-      Option
-        .when((repoDir / renderedDir / "build.sbt").isRegularFile)(renderedBuildRoot)
-        .fold(
-          logger
-            .warn(s"Rendered Giter8 template does not contain $renderedDir/build.sbt")
-            .as(Option.empty[BuildRoot])
-        )(buildRoot => Option(buildRoot).pure[F])
+      (if (renderedBuildFile.isRegularFile) renderedBuildRoot.some.pure[F]
+       else
+         logger
+           .warn(s"Rendered Giter8 template does not contain $renderedDir/build.sbt")
+           .as(none[BuildRoot]))
   }
 }
 
