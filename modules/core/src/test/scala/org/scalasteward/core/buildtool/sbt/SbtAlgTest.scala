@@ -47,6 +47,35 @@ class SbtAlgTest extends FunSuite {
     assertEquals(state, expected)
   }
 
+  test("getDependencies without meta-builds") {
+    val repo = Repo("sbt-alg", "test-without-meta-builds")
+    val buildRoot = BuildRoot(repo, ".", includeMetaBuilds = false)
+    val repoDir = workspaceAlg.repoDir(repo).unsafeRunSync()
+    val initial = MockState.empty
+      .addFiles(repoDir / "project" / "build.properties" -> "sbt.version=1.3.11")
+      .unsafeRunSync()
+    val state = sbtAlg.getDependencies(buildRoot).runS(initial).unsafeRunSync()
+    val expected = initial.copy(
+      trace = Vector(
+        Cmd("read", s"$repoDir/project/build.properties"),
+        Cmd("read", "classpath:StewardPlugin_1_3_11.scala"),
+        Cmd("write", s"$repoDir/project/scala-steward-StewardPlugin_1_3_11.scala"),
+        Cmd.execSandboxed(
+          repoDir,
+          "sbt",
+          "--server",
+          "-Dsbt.color=false",
+          "-Dsbt.log.noformat=true",
+          "-Dsbt.supershell=false",
+          "-Dsbt.server.forcestart=true",
+          s";$crossStewardDependencies"
+        ),
+        Cmd("rm", "-rf", s"$repoDir/project/scala-steward-StewardPlugin_1_3_11.scala")
+      )
+    )
+    assertEquals(state, expected)
+  }
+
   test("sbt 2") {
     val repo = Repo("sbt-alg", "test-2")
     val buildRoot = BuildRoot(repo, ".")

@@ -33,29 +33,31 @@ final class BuildToolDispatcher[F[_]](implicit
     F: Monad[F]
 ) {
   def getDependencies(repo: Repo, repoConfig: RepoConfig): F[List[Scope.Dependencies]] =
-    getBuildRootsAndTools(repo, repoConfig).flatMap(_.flatTraverse { case (buildRoot, buildTools) =>
-      for {
-        dependencies <- buildTools.flatTraverse { buildTool =>
-          logger.info(s"Get dependencies in ${buildRoot.relativePath} from ${buildTool.name}") >>
-            buildTool.getDependencies(buildRoot)
-        }
-        maybeScalafmtDependency <- scalafmtAlg.getScopedScalafmtDependency(buildRoot)
-      } yield Scope.combineByResolvers(maybeScalafmtDependency.toList ::: dependencies)
-    })
-
-  def runMigration(repo: Repo, repoConfig: RepoConfig, migration: ScalafixMigration): F[Unit] =
-    getBuildRootsAndTools(repo, repoConfig).flatMap(_.traverse_ { case (buildRoot, buildTools) =>
-      buildTools.traverse_(_.runMigration(buildRoot, migration))
-    })
-
-  private def getBuildRootsAndTools(
-      repo: Repo,
-      repoConfig: RepoConfig
-  ): F[List[(BuildRoot, List[BuildToolAlg[F]])]] =
     for {
       baseBuildRoots <- repoConfig.buildRootsOrDefault(repo).pure[F]
-      giter8BuildRoot <- giter8Alg.getGiter8BuildRoot(repo)
-      allBuildRoots = giter8BuildRoot.fold(baseBuildRoots)(g8 => baseBuildRoots :+ g8)
-      result <- allBuildRoots.traverse(buildToolCandidates.findBuildTools)
-    } yield result
+      giter8BuildRoot <- giter8Alg.getRenderedGiter8BuildRoot(repo)
+      buildRoots = giter8BuildRoot.fold(baseBuildRoots)(baseBuildRoots :+ _)
+      buildRootsAndTools <- getBuildRootsAndTools(buildRoots)
+      dependencies <- buildRootsAndTools.flatTraverse { case (buildRoot, buildTools) =>
+        for {
+          dependencies <- buildTools.flatTraverse { buildTool =>
+            logger.info(s"Get dependencies in ${buildRoot.relativePath} from ${buildTool.name}") >>
+              buildTool.getDependencies(buildRoot)
+          }
+          maybeScalafmtDependency <- scalafmtAlg.getScopedScalafmtDependency(buildRoot)
+        } yield Scope.combineByResolvers(maybeScalafmtDependency.toList ::: dependencies)
+      }
+    } yield dependencies
+
+  def runMigration(repo: Repo, repoConfig: RepoConfig, migration: ScalafixMigration): F[Unit] =
+    getBuildRootsAndTools(repoConfig.buildRootsOrDefault(repo)).flatMap(
+      _.traverse_ { case (buildRoot, buildTools) =>
+        buildTools.traverse_(_.runMigration(buildRoot, migration))
+      }
+    )
+
+  private def getBuildRootsAndTools(
+      buildRoots: List[BuildRoot]
+  ): F[List[(BuildRoot, List[BuildToolAlg[F]])]] =
+    buildRoots.traverse(buildToolCandidates.findBuildTools)
 }

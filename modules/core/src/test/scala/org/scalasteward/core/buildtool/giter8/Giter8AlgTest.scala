@@ -25,37 +25,53 @@ import org.scalasteward.core.mock.{MockEffOps, MockState}
 
 class Giter8AlgTest extends FunSuite {
 
-  test("getGiter8BuildRoot: returns BuildRoot when repo name ends with .g8") {
+  test("getRenderedGiter8BuildRoot: returns the rendered build root") {
     val repo = Repo("example", "kafka-streams.g8")
+    val repoDir = workspaceAlg.repoDir(repo).unsafeRunSync()
     val initial = MockState.empty
-    val result = giter8Alg.getGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
-    val expectedBuildRoot = BuildRoot(repo, "src/main/g8")
+      .addFiles(
+        repoDir / "src" / "main" / "g8" / "build.sbt" -> "name := $name$",
+        repoDir / "target" / "g8" / "build.sbt" -> "name := \"example\""
+      )
+      .unsafeRunSync()
+    val result = giter8Alg.getRenderedGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
+    val expectedBuildRoot = BuildRoot(repo, "target/g8", includeMetaBuilds = false)
     assertEquals(result, Some(expectedBuildRoot))
   }
 
-  test("getGiter8BuildRoot: returns BuildRoot when src/main/g8 directory exists") {
+  test("getRenderedGiter8BuildRoot: repository name does not need to end with .g8") {
     val repo = Repo("example", "kafka-streams")
     val repoDir = workspaceAlg.repoDir(repo).unsafeRunSync()
     val initial = MockState.empty
       .addFiles(repoDir / "src" / "main" / "g8" / "build.sbt" -> "lazy val root = ...")
+      .flatMap(_.addFiles(repoDir / "target" / "g8" / "build.sbt" -> "lazy val root = ..."))
       .unsafeRunSync()
-    val result = giter8Alg.getGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
-    val expectedBuildRoot = BuildRoot(repo, "src/main/g8")
+    val result = giter8Alg.getRenderedGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
+    val expectedBuildRoot = BuildRoot(repo, "target/g8", includeMetaBuilds = false)
     assertEquals(result, Some(expectedBuildRoot))
   }
 
-  test("getGiter8BuildRoot: returns None when no giter8 template") {
+  test("getRenderedGiter8BuildRoot: returns None when no giter8 template exists") {
     val repo = Repo("example", "regular-project")
     val initial = MockState.empty
-    val result = giter8Alg.getGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
+    val result = giter8Alg.getRenderedGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
     assertEquals(result, None)
   }
 
-  test("getGiter8BuildRoot: .g8 repo takes precedence over non-existing src/main/g8") {
+  test("getRenderedGiter8BuildRoot: a .g8 suffix alone is not a src-layout template") {
     val repo = Repo("example", "my-template.g8")
     val initial = MockState.empty
-    val result = giter8Alg.getGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
-    val expectedBuildRoot = BuildRoot(repo, "src/main/g8")
-    assertEquals(result, Some(expectedBuildRoot))
+    val result = giter8Alg.getRenderedGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
+    assertEquals(result, None)
+  }
+
+  test("getRenderedGiter8BuildRoot: returns None when the rendered template has no sbt build") {
+    val repo = Repo("example", "non-sbt-template.g8")
+    val repoDir = workspaceAlg.repoDir(repo).unsafeRunSync()
+    val initial = MockState.empty
+      .addFiles(repoDir / "src" / "main" / "g8" / "README.md" -> "Hello $name$")
+      .unsafeRunSync()
+    val result = giter8Alg.getRenderedGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
+    assertEquals(result, None)
   }
 }

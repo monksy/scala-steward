@@ -117,14 +117,15 @@ class BuildToolDispatcherTest extends FunSuite {
         repoDir / "build.sbt" -> "lazy val root = ...",
         repoDir / "project" / "build.properties" -> "sbt.version=1.2.6",
         repoDir / scalafmtConfName -> "version=2.0.0",
-        repoDir / "src" / "main" / "g8" / "build.sbt" -> "lazy val root = ..."
+        repoDir / "src" / "main" / "g8" / "build.sbt" -> "lazy val root = ...",
+        repoDir / "target" / "g8" / "build.sbt" -> "lazy val root = ..."
       )
       .unsafeRunSync()
     val (state, deps) =
       buildToolDispatcher.getDependencies(repo, repoConfig).runSA(initial).unsafeRunSync()
 
-    // Should have dependencies from both the main build and the giter8 template
-    assert(deps.length >= 1)
+    assert(deps.nonEmpty)
+    assert(state.trace.contains(Log("Get dependencies in target/g8 from sbt")))
   }
 
   test("getDependencies: src/main/g8 directory exists includes giter8 build root") {
@@ -136,14 +137,15 @@ class BuildToolDispatcherTest extends FunSuite {
         repoDir / "build.sbt" -> "lazy val root = ...",
         repoDir / "project" / "build.properties" -> "sbt.version=1.2.6",
         repoDir / scalafmtConfName -> "version=2.0.0",
-        repoDir / "src" / "main" / "g8" / "build.sbt" -> "lazy val root = ..."
+        repoDir / "src" / "main" / "g8" / "build.sbt" -> "lazy val root = ...",
+        repoDir / "target" / "g8" / "build.sbt" -> "lazy val root = ..."
       )
       .unsafeRunSync()
     val (state, deps) =
       buildToolDispatcher.getDependencies(repo, repoConfig).runSA(initial).unsafeRunSync()
 
-    // Should have dependencies from both the main build and the giter8 template
-    assert(deps.length >= 1)
+    assert(deps.nonEmpty)
+    assert(state.trace.contains(Log("Get dependencies in target/g8 from sbt")))
   }
 
   test("getDependencies: no giter8 template returns only base build roots") {

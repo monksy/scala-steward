@@ -66,7 +66,9 @@ final class SbtAlg[F[_]](defaultResolvers: List[Resolver], ignoreOptsFiles: Bool
     for {
       buildRootDir <- workspaceAlg.buildRootDir(buildRoot)
       maybeSbtVersion <- getSbtVersion(buildRootDir)
-      metaBuilds <- metaBuildsCount(buildRootDir)
+      metaBuilds <-
+        if (buildRoot.includeMetaBuilds) metaBuildsCount(buildRootDir)
+        else 0.pure[F]
       lines <- addStewardPluginTemporarily(buildRootDir, maybeSbtVersion, metaBuilds).surround {
         val commands = Nel.of(crossStewardDependencies) ++
           List.fill(metaBuilds)(List(reloadPlugins, stewardDependencies)).flatten
