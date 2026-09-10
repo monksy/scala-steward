@@ -21,22 +21,25 @@ import cats.syntax.all.*
 import org.scalasteward.core.data.*
 import org.scalasteward.core.repoconfig.RepoConfig
 import org.scalasteward.core.update.FilterAlg.*
-import org.scalasteward.core.util.Nel
+import org.scalasteward.core.util.{DateTimeAlg, Timestamp}
 import org.typelevel.log4cats.Logger
 
 final class FilterAlg[F[_]](implicit
     logger: Logger[F],
+    dateTimeAlg: DateTimeAlg[F],
     F: Monad[F]
 ) {
   def localFilterSingle(
       config: RepoConfig,
       update: ArtifactUpdateCandidates
-  ): F[Option[Update.ForArtifactId]] =
-    localFilter(update, config) match {
+  ): F[Option[Update.ForArtifactId]] = for {
+    currentTime <- dateTimeAlg.currentTimestamp
+    result <- localFilter(update, config, currentTime) match {
       case Right(update) => F.pure(update.some)
       case Left(reason)  =>
         logger.info(s"Ignore ${reason.update.show} (reason: ${reason.show})").as(None)
     }
+  } yield result
 }
 
 object FilterAlg {
@@ -52,10 +55,12 @@ object FilterAlg {
         case NoSuitableNextVersion(_)   => "no suitable next version"
         case VersionOrderingConflict(_) => "version ordering conflict"
         case IgnoreScalaNext(_)         => "not upgrading from Scala LTS to Next version"
+        case TooRecentForCooldown(_)    => "too recent for cooldown config"
       }
   }
 
   final case class IgnoredByConfig(update: ArtifactUpdateCandidates) extends RejectionReason
+  final case class TooRecentForCooldown(update: ArtifactUpdateCandidates) extends RejectionReason
   final case class VersionPinnedByConfig(update: ArtifactUpdateCandidates) extends RejectionReason
   final case class NotAllowedByConfig(update: ArtifactUpdateCandidates) extends RejectionReason
   final case class NoSuitableNextVersion(update: ArtifactUpdateCandidates) extends RejectionReason
@@ -64,25 +69,28 @@ object FilterAlg {
 
   def localFilter(
       update: ArtifactUpdateCandidates,
-      repoConfig: RepoConfig
+      repoConfig: RepoConfig,
+      currentTime: Timestamp
   ): Either[RejectionReason, Update.ForArtifactId] =
     repoConfig.updatesOrDefault
-      .keep(update)
+      .keep(update, currentTime, repoConfig.dependencyOverridesOrDefault)
       .flatMap(scalaLTSFilter)
       .flatMap(globalFilter(_, repoConfig))
 
+  private def isScalaLtsVersion(version: Version): Boolean =
+    version.value.startsWith("3.3.") || version.value.startsWith("3.9.")
+
   def scalaLTSFilter(update: ArtifactUpdateCandidates): FilterResult =
     if (isScala3Lang(update)) {
-      if (update.artifactForUpdate.currentVersion >= scalaNextMinVersion) {
+      if (
+        update.artifactForUpdate.currentVersion.value.startsWith("3.") &&
+        !isScalaLtsVersion(update.artifactForUpdate.currentVersion)
+      ) {
         // already on Scala Next
         Right(update)
       } else {
-        // on Scala 3.3.x, just keep LTS versions
-        val filteredVersions = update.newerVersions.filterNot(_ >= scalaNextMinVersion)
-        if (filteredVersions.nonEmpty)
-          Right(update.copy(newerVersions = Nel.fromListUnsafe(filteredVersions)))
-        else
-          Left(IgnoreScalaNext(update))
+        // on Scala LTS (3.3.x or 3.9.x), stay on LTS versions
+        update.filterVersions(isScalaLtsVersion).toRight(IgnoreScalaNext(update))
       }
     } else {
       Right(update)
@@ -94,8 +102,9 @@ object FilterAlg {
     } || isScalaLibraryFor3(update)
 
   private def isScalaLibraryFor3(update: ArtifactUpdateCandidates): Boolean =
-    (update.artifactForUpdate.groupId == scalaLangGroupId && update.artifactForUpdate.artifactId.name == scalaLibrary.name && update.newerVersions
-      .forall(_ > scala38))
+    (update.artifactForUpdate.groupId == scalaLangGroupId &&
+      update.artifactForUpdate.artifactId.name == scalaLibrary.name &&
+      update.newerVersions.forall(_ > scala38))
 
   private def globalFilter(
       update: ArtifactUpdateCandidates,
@@ -127,10 +136,7 @@ object FilterAlg {
   }
 
   private def checkVersionOrdering(
-      update: Update.ForArtifactId
-  ): Either[RejectionReason, Update.ForArtifactId] = {
-    val current = coursier.core.Version(update.currentVersion.value)
-    val next = coursier.core.Version(update.nextVersion.value)
-    if (current > next) Left(VersionOrderingConflict(update)) else Right(update)
-  }
+      u: Update.ForArtifactId
+  ): Either[RejectionReason, Update.ForArtifactId] =
+    Either.cond(u.versionUpdate.obeysCoursierOrdering, u, VersionOrderingConflict(u))
 }

@@ -1,7 +1,6 @@
 import com.typesafe.sbt.packager.docker.*
 import org.typelevel.sbt.gha.JavaSpec.Distribution.Temurin
 import org.typelevel.scalacoptions.ScalacOptions
-import sbtcrossproject.{CrossProject, CrossType, Platform}
 
 /// variables
 
@@ -13,15 +12,8 @@ val gitHubUrl = s"https://github.com/$gitHubOwner/$projectName"
 val mainBranch = "main"
 val gitHubUserContent = s"https://raw.githubusercontent.com/$gitHubOwner/$projectName/$mainBranch"
 
-val moduleCrossPlatformMatrix: Map[String, List[Platform]] = Map(
-  "benchmark" -> List(JVMPlatform),
-  "core" -> List(JVMPlatform),
-  "docs" -> List(JVMPlatform),
-  "dummy" -> List(JVMPlatform)
-)
-
 val Scala213 = "2.13.18"
-val Scala3 = "3.3.7"
+val Scala3 = "3.3.8"
 
 /// sbt-typelevel configuration
 
@@ -50,12 +42,15 @@ ThisBuild / githubWorkflowPublish := Seq(
     name = Some("Publish Docker image")
   )
 )
-ThisBuild / githubWorkflowJavaVersions := Seq("21", "17", "11").map(JavaSpec(Temurin, _))
-ThisBuild / githubWorkflowBuild :=
+ThisBuild / githubWorkflowJavaVersions := Seq("25", "21", "17").map(JavaSpec(Temurin, _))
+ThisBuild / githubWorkflowBuild := {
+  val scalafmtVersion =
+    com.typesafe.config.ConfigFactory.parseFile(file(".scalafmt.conf")).getString("version").trim
+
   Seq(
     WorkflowStep.Use(
       UseRef.Public("coursier", "setup-action", "v1"),
-      params = Map("apps" -> "scalafmt:3.8.3")
+      params = Map("apps" -> s"scalafmt:${scalafmtVersion}")
     ),
     WorkflowStep.Sbt(List("validate"), name = Some("Build project")),
     WorkflowStep.Use(
@@ -64,6 +59,7 @@ ThisBuild / githubWorkflowBuild :=
       env = Map("CODECOV_TOKEN" -> "${{ secrets.CODECOV_TOKEN }}")
     )
   )
+}
 
 ThisBuild / mergifyPrRules := {
   val authorCondition = MergifyCondition.Or(
@@ -100,11 +96,11 @@ ThisBuild / tpolecatDefaultOptionsMode := {
 
 lazy val root = project
   .in(file("."))
-  .aggregate(benchmark.jvm, core.jvm, docs.jvm, dummy.jvm)
+  .aggregate(benchmark, core, docs, dummy)
   .settings(commonSettings)
   .settings(noPublishSettings)
 
-lazy val benchmark = myCrossProject("benchmark")
+lazy val benchmark = myProject("benchmark")
   .dependsOn(core)
   .enablePlugins(JmhPlugin)
   .settings(noPublishSettings)
@@ -115,7 +111,7 @@ lazy val benchmark = myCrossProject("benchmark")
     unusedCompileDependencies := Set.empty
   )
 
-lazy val core = myCrossProject("core")
+lazy val core = myProject("core")
   .enablePlugins(BuildInfoPlugin, JavaAppPackaging, DockerPlugin)
   .settings(dockerSettings)
   .settings(
@@ -245,15 +241,15 @@ lazy val core = myCrossProject("core")
     }.taskValue
   )
 
-lazy val docs = myCrossProject("docs")
+lazy val docs = myProject("docs")
   .dependsOn(core)
   .enablePlugins(MdocPlugin)
   .settings(noPublishSettings)
   .settings(
     libraryDependencies ++= Seq(Dependencies.munitDiff),
     scalacOptions += "-Ytasty-reader",
-    tpolecatExcludeOptions := Set(ScalacOptions.fatalWarnings),
-    mdocIn := baseDirectory.value / ".." / "mdoc",
+    tpolecatExcludeOptions := Set(ScalacOptions.fatalWarnings, ScalacOptions.warnNonUnitStatement),
+    mdocIn := baseDirectory.value / "mdoc",
     mdocOut := (LocalRootProject / baseDirectory).value / "docs",
     mdocVariables := Map(
       "GITHUB_URL" -> gitHubUrl,
@@ -282,7 +278,7 @@ lazy val docs = myCrossProject("docs")
 
 // Dummy project to receive updates from @scala-steward for this project's
 // libraryDependencies.
-lazy val dummy = myCrossProject("dummy")
+lazy val dummy = myProject("dummy")
   .disablePlugins(ExplicitDepsPlugin)
   .settings(noPublishSettings)
   .settings(
@@ -294,11 +290,8 @@ lazy val dummy = myCrossProject("dummy")
 
 /// settings
 
-def myCrossProject(name: String): CrossProject =
-  CrossProject(name, file(name))(moduleCrossPlatformMatrix(name): _*)
-    .crossType(CrossType.Pure)
-    .withoutSuffixFor(JVMPlatform)
-    .in(file(s"modules/$name"))
+def myProject(name: String): Project =
+  Project(name, file(s"modules/$name"))
     .settings(
       moduleName := s"$projectName-$name",
       moduleRootPkg := s"$rootPkg.${name.replace('-', '.')}"
@@ -313,7 +306,9 @@ lazy val commonSettings = Def.settings(
 
 lazy val compileSettings = Def.settings(
   scalaVersion := Scala213,
-  scalacOptions ++= {
+  scalacOptions ++= Seq(
+    "-java-output-version:17"
+  ) ++ {
     scalaBinaryVersion.value match {
       case "2.13" =>
         Seq("-Xsource:3-cross")
@@ -362,7 +357,7 @@ lazy val metadataSettings = Def.settings(
 
 lazy val dockerSettings = Def.settings(
   dockerBaseImage := Option(System.getenv("DOCKER_BASE_IMAGE"))
-    .getOrElse("eclipse-temurin:11-alpine"),
+    .getOrElse("eclipse-temurin:17-alpine"),
   dockerCommands ++= {
     val curl = "curl -fL --output"
     val binDir = "/usr/local/bin"
@@ -401,7 +396,11 @@ lazy val dockerSettings = Def.settings(
       Cmd("RUN", installMill),
       Cmd("RUN", installCoursier),
       Cmd("RUN", installScalaCli),
-      Cmd("RUN", s"$csBin install --install-dir $binDir scalafix scalafmt"),
+      Cmd(
+        "RUN",
+        s"$csBin bootstrap --main scalafix.cli.Cli ch.epfl.scala:scalafix-cli_2.13.18:0.14.7 -o $binDir/scalafix"
+      ),
+      Cmd("RUN", s"$csBin install --install-dir $binDir scalafmt"),
       // Ensure binaries are in PATH
       Cmd("RUN", "echo $PATH"),
       Cmd("RUN", "npm install --global yarn"),
@@ -469,7 +468,7 @@ runSteward := Def.taskDyn {
     Seq("--whitelist", s"$home/.mill"),
     Seq("--whitelist", s"$home/.sbt")
   ).flatten.mkString(" ", " ", "")
-  (core.jvm / Compile / run).toTask(args)
+  (core / Compile / run).toTask(args)
 }.value
 
 lazy val runValidateRepoConfig = taskKey[Unit]("")
@@ -478,7 +477,7 @@ runValidateRepoConfig := Def.taskDyn {
   val args = Seq(
     Seq("validate-repo-config", s"$projectDir/.scala-steward.conf")
   ).flatten.mkString(" ", " ", "")
-  (core.jvm / Compile / run).toTask(args)
+  (core / Compile / run).toTask(args)
 }.value
 
 /// commands

@@ -129,7 +129,7 @@ final class SbtAlg[F[_]](defaultResolvers: List[Resolver], ignoreOptsFiles: Bool
   private def latestSbtScalafixVersion: F[Option[Version]] =
     versionsCache
       .getVersions(Scope(sbtScalafixDependency, defaultResolvers), None)
-      .map(_.lastOption)
+      .map(_.lastOption.map(_.version))
 
   private def runBuildMigration(buildRoot: BuildRoot, migration: ScalafixMigration): F[Unit] =
     for {
@@ -153,6 +153,7 @@ final class SbtAlg[F[_]](defaultResolvers: List[Resolver], ignoreOptsFiles: Bool
       val command =
         Nel.of(
           "sbt",
+          "--server",
           "-Dsbt.color=false",
           "-Dsbt.log.noformat=true",
           "-Dsbt.supershell=false",

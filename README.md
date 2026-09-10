@@ -22,6 +22,11 @@ Once that PR is merged, [**@scala-steward**][@scala-steward] will check periodic
 
 Many thanks to [VirtusLab][VirtusLab] for hosting and managing this public Scala Steward instance!
 
+## Alternatives to Scala Steward
+
+* GitHub: Since [May 2026](https://github.blog/changelog/2026-05-26-dependabot-version-updates-now-support-the-sbt-ecosystem/),
+  Dependabot version updates now [support `sbt`](https://github.com/dependabot/dependabot-core/issues/352/).
+
 ## Show us the pull requests!
 
 If you are curious how [**@scala-steward**'s][@scala-steward] pull requests
@@ -243,7 +248,7 @@ plugin which was used until version 0.6 to find dependency updates.
 Thanks goes also to [**@impurepics**](https://twitter.com/impurepics)
 for [**@scala-steward**][@scala-steward]'s cute profile picture and to
 the maintainers and contributors of the various
-[libraries](https://github.com/scala-steward-org/scala-steward/blob/master/project/Dependencies.scala)
+[libraries](https://github.com/scala-steward-org/scala-steward/blob/main/project/Dependencies.scala)
 this project depends on.
 
 ## License
@@ -251,7 +256,7 @@ this project depends on.
 Scala Steward is licensed under the
 [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0).
 
-[CoC]: https://github.com/scala-steward-org/scala-steward/blob/master/CODE_OF_CONDUCT.md
+[CoC]: https://github.com/scala-steward-org/scala-steward/blob/main/CODE_OF_CONDUCT.md
 [@scala-steward]: https://github.com/scala-steward
 [sbt-updates]: https://github.com/rtimush/sbt-updates
 [VirtusLab]: https://www.virtuslab.com
