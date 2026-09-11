@@ -66,13 +66,11 @@ final class SbtAlg[F[_]](defaultResolvers: List[Resolver], ignoreOptsFiles: Bool
     for {
       buildRootDir <- workspaceAlg.buildRootDir(buildRoot)
       maybeSbtVersion <- getSbtVersion(buildRootDir)
-      metaBuilds <-
-        if (buildRoot.includeSbtMetaBuilds) metaBuildsCount(buildRootDir)
-        else 0.pure[F]
+      metaBuilds <- metaBuildsCount(buildRootDir)
       lines <- addStewardPluginTemporarily(buildRootDir, maybeSbtVersion, metaBuilds).surround {
         val commands = Nel.of(crossStewardDependencies) ++
           List.fill(metaBuilds)(List(reloadPlugins, stewardDependencies)).flatten
-        sbt(commands, buildRootDir)
+        runSbt(commands, buildRootDir)
       }
       dependencies = parser.parseDependencies(lines)
       maybeSbtDependency = maybeSbtVersion.flatMap(scopedSbtDependency).map(_.map(List(_))).toList
@@ -122,7 +120,7 @@ final class SbtAlg[F[_]](defaultResolvers: List[Resolver], ignoreOptsFiles: Bool
           withScalacOptions.surround {
             val scalafixCmds = migration.rewriteRules.map(rule => s"$scalafixAll $rule").toList
             val slurpOptions = SlurpOptions.ignoreBufferOverflow
-            sbt(Nel(scalafixEnable, scalafixCmds), buildRootDir, slurpOptions).void
+            runSbt(Nel(scalafixEnable, scalafixCmds), buildRootDir, slurpOptions).void
           }
         }
       }
@@ -146,7 +144,7 @@ final class SbtAlg[F[_]](defaultResolvers: List[Resolver], ignoreOptsFiles: Bool
       }
     } yield ()
 
-  private def sbt(
+  def runSbt(
       sbtCommands: Nel[String],
       repoDir: File,
       slurpOptions: SlurpOptions = Set.empty

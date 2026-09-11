@@ -19,14 +19,16 @@ package org.scalasteward.core.buildtool.giter8
 import cats.Monad
 import cats.syntax.all.*
 import org.scalasteward.core.buildtool.BuildRoot
+import org.scalasteward.core.buildtool.sbt.SbtAlg
 import org.scalasteward.core.data.Repo
-import org.scalasteward.core.io.{ProcessAlg, WorkspaceAlg}
+import org.scalasteward.core.io.{FileAlg, WorkspaceAlg}
 import org.scalasteward.core.util.Nel
 import org.typelevel.log4cats.Logger
 
 final class Giter8Alg[F[_]](implicit
+    fileAlg: FileAlg[F],
     logger: Logger[F],
-    processAlg: ProcessAlg[F],
+    sbtAlg: SbtAlg[F],
     workspaceAlg: WorkspaceAlg[F],
     F: Monad[F]
 ) {
@@ -35,38 +37,24 @@ final class Giter8Alg[F[_]](implicit
 
   def getRenderedGiter8BuildRoot(repo: Repo): F[Option[BuildRoot]] =
     workspaceAlg.repoDir(repo).flatMap { repoDir =>
-      if ((repoDir / templateDir).isDirectory) render(repo, repoDir)
-      else none[BuildRoot].pure[F]
+      fileAlg
+        .isDirectory(repoDir / templateDir)
+        .ifM(render(repo, repoDir), none[BuildRoot].pure[F])
     }
 
   private def render(repo: Repo, repoDir: better.files.File): F[Option[BuildRoot]] = {
-    val renderedBuildRoot = BuildRoot(repo, renderedDir, includeSbtMetaBuilds = false)
+    val renderedBuildRoot = BuildRoot(repo, renderedDir)
     val renderedBuildFile = repoDir / renderedDir / "build.sbt"
-    val command = Nel.of(
-      "sbt",
-      "--server",
-      "-Dsbt.color=false",
-      "-Dsbt.log.noformat=true",
-      "-Dsbt.supershell=false",
-      "-Dsbt.server.forcestart=true",
-      "g8"
-    )
 
     logger.info(s"Render Giter8 template in $templateDir") >>
-      processAlg.execSandboxed(command, repoDir).void >>
-      (if (renderedBuildFile.isRegularFile) renderedBuildRoot.some.pure[F]
-       else
-         logger
-           .warn(s"Rendered Giter8 template does not contain $renderedDir/build.sbt")
-           .as(none[BuildRoot]))
+      sbtAlg.runSbt(Nel.one("g8"), repoDir).void >>
+      fileAlg
+        .isRegularFile(renderedBuildFile)
+        .ifM(
+          renderedBuildRoot.some.pure[F],
+          logger
+            .warn(s"Rendered Giter8 template does not contain $renderedDir/build.sbt")
+            .as(none[BuildRoot])
+        )
   }
-}
-
-object Giter8Alg {
-  def create[F[_]](implicit
-      logger: Logger[F],
-      processAlg: ProcessAlg[F],
-      workspaceAlg: WorkspaceAlg[F],
-      F: Monad[F]
-  ): Giter8Alg[F] = new Giter8Alg
 }

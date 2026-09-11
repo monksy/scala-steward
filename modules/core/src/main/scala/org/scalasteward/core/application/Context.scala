@@ -193,7 +193,7 @@ object Context {
         new SbtAlg[F](config.defaultResolvers, config.ignoreOptsFiles)
       implicit val scalaCliAlg: ScalaCliAlg[F] = new ScalaCliAlg[F]
       implicit val millAlg: MillAlg[F] = new MillAlg[F](config.defaultResolvers)
-      implicit val giter8Alg: Giter8Alg[F] = Giter8Alg.create[F]
+      implicit val giter8Alg: Giter8Alg[F] = new Giter8Alg[F]
       implicit val buildToolDispatcher: BuildToolDispatcher[F] = new BuildToolDispatcher[F]
       implicit val refreshErrorAlg: RefreshErrorAlg[F] =
         new RefreshErrorAlg[F](refreshErrorStore, config.refreshBackoffPeriod)

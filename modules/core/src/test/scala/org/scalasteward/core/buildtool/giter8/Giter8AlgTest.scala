@@ -37,7 +37,7 @@ class Giter8AlgTest extends FunSuite {
       .unsafeRunSync()
     val (state, result) =
       giter8Alg.getRenderedGiter8BuildRoot(repo).runSA(initial).unsafeRunSync()
-    val expectedBuildRoot = BuildRoot(repo, "target/g8", includeSbtMetaBuilds = false)
+    val expectedBuildRoot = BuildRoot(repo, "target/g8")
     assertEquals(result, Some(expectedBuildRoot))
     assert(
       state.trace.contains(
@@ -49,7 +49,7 @@ class Giter8AlgTest extends FunSuite {
           "-Dsbt.log.noformat=true",
           "-Dsbt.supershell=false",
           "-Dsbt.server.forcestart=true",
-          "g8"
+          ";g8"
         )
       )
     )
@@ -65,7 +65,7 @@ class Giter8AlgTest extends FunSuite {
       )
       .unsafeRunSync()
     val result = giter8Alg.getRenderedGiter8BuildRoot(repo).runA(initial).unsafeRunSync()
-    val expectedBuildRoot = BuildRoot(repo, "target/g8", includeSbtMetaBuilds = false)
+    val expectedBuildRoot = BuildRoot(repo, "target/g8")
     assertEquals(result, Some(expectedBuildRoot))
   }
 
